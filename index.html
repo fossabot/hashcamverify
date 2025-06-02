@@ -75,30 +75,21 @@
       return json.result || "0x";
     }
 
-    // ---- Main verify flow: test beide varianten ----
+    // ---- Main verify flow ----
     async function verify(file) {
       if(!file) return;
       ui("⏳ Calculating SHA-256…","#ffe");
       const sha = await shaHex(file);
+      const key32 = sha3hex(sha); // <--- ZONDER "0x" prefix!
+      console.log("[HashCam] SHA256:", sha);
+      console.log("[HashCam] Mapping key:", key32);
 
-      // Testen met "0x" + sha én zonder "0x"
-      const candidates = [
-        sha3hex("0x"+sha),
-        sha3hex(sha)
-      ];
-
-      // Debug info in console
-      console.log("[HashCam] SHA256: ", sha);
-      console.log("[HashCam] Test keys: ", candidates);
-
-      for (let key32 of candidates) {
-        const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
-        if (isRegistered) {
-          const tsRes = await ethCall(SIG_TS, key32);
-          const tsNum = parseInt(tsRes,16);
-          const when  = new Date(tsNum*1000).toLocaleString();
-          return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
-        }
+      const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
+      if (isRegistered) {
+        const tsRes = await ethCall(SIG_TS, key32);
+        const tsNum = parseInt(tsRes,16);
+        const when  = new Date(tsNum*1000).toLocaleString();
+        return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
       }
       ui("❌ NOT FOUND","crimson");
     }
