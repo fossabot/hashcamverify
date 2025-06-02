@@ -32,7 +32,7 @@
   <script src="https://cdn.jsdelivr.net/npm/ethers@5/dist/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/js-sha256/build/sha256.min.js"></script>
   <script>
-    // ---- Config (update API_KEY indien nodig) ----
+    // ---- Config ----
     const API_KEY  = "ICZCXTVQUIYF6IUPFU44K12JRXEJ7T5E5I";
     const CONTRACT = "0x076708f62d9d6fdbad7d1567161483bafda5a1da";
     const SIG_IS   = "0xa86e47c9";   // isHashRegistered(bytes32)
@@ -57,9 +57,8 @@
       }
       return sha256(new Uint8Array(buf));
     }
-    function sha3hex(hexstr) {
-      // returns keccak256 as 0x... string
-      return ethers.utils.keccak256(ethers.utils.toUtf8Bytes(hexstr));
+    function sha3hex(str) {
+      return ethers.utils.keccak256(ethers.utils.toUtf8Bytes(str));
     }
     async function ethCall(selector, key32) {
       const data = selector + key32.slice(2);
@@ -76,24 +75,35 @@
       return json.result || "0x";
     }
 
-    // ---- Main verify flow (let op: nieuwe mapping key!)
+    // ---- Main verify flow: test beide varianten ----
     async function verify(file) {
       if(!file) return;
       ui("⏳ Calculating SHA-256…","#ffe");
       const sha = await shaHex(file);
-      const hexstr = "0x" + sha;
-      const key32 = sha3hex(hexstr); // Mapping-key zoals in Solidity
-      // 1) Check hash
-      const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
-      if (!isRegistered) return ui("❌ NOT FOUND","crimson");
-      // 2) Get timestamp
-      const tsRes = await ethCall(SIG_TS, key32);
-      const tsNum = parseInt(tsRes,16);
-      const when  = new Date(tsNum*1000).toLocaleString();
-      return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
+
+      // Testen met "0x" + sha én zonder "0x"
+      const candidates = [
+        sha3hex("0x"+sha),
+        sha3hex(sha)
+      ];
+
+      // Debug info in console
+      console.log("[HashCam] SHA256: ", sha);
+      console.log("[HashCam] Test keys: ", candidates);
+
+      for (let key32 of candidates) {
+        const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
+        if (isRegistered) {
+          const tsRes = await ethCall(SIG_TS, key32);
+          const tsNum = parseInt(tsRes,16);
+          const when  = new Date(tsNum*1000).toLocaleString();
+          return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
+        }
+      }
+      ui("❌ NOT FOUND","crimson");
     }
 
-    // ---- Drag, drop, select events
+    // ---- Drag, drop, select events ----
     dz.ondragover = e=>{e.preventDefault();dz.style.borderColor="#0af";}
     dz.ondragleave = ()=>{dz.style.borderColor="#444";}
     dz.ondrop = e=>{
