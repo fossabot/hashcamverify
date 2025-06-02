@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HashCam Media Blockchain Verificatie</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css?family=Fira+Mono:400,700&display=swap" rel="stylesheet">
+  <style>
+    body { background: #111; color: #fff; font-family: Fira Mono, monospace; margin:0; }
+    .wrap { max-width: 700px; margin: 3em auto; background:#181818; border-radius:18px; box-shadow:0 2px 18px #0003; padding:2.5em; }
+    h2 { font-size: 2em; font-weight:700; margin:0 0 1em; text-align: center; }
+    .dz { margin: 1em auto 0; padding:2.5em 1em; border:2px dashed #444; border-radius:12px; background:#232323; cursor:pointer; position:relative; overflow:hidden; text-align:center; transition:.2s border-color; }
+    .dz:hover { border-color:#0af;}
+    .dz p { font-size:1.15em; margin:0 0 .5em;}
+    .msg { margin:2em 0 0; font-size:1.1em; text-align:center; min-height:2.5em; word-break:break-all;}
+    .credit {margin:2.5em 0 0; text-align:center; font-size:.95em; color:#bbb;}
+    @media (max-width:600px) { .wrap{padding:1em;} .dz{padding:1.5em .5em;} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>🫆 Drop the media you want to verify</h2>
+    <div id="dz" class="dz">
+      <p>Drop file or <span style="text-decoration:underline;cursor:pointer;color:#62e7ff;" id="sel">select here</span></p>
+      <input type="file" id="fi" style="display:none">
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="credit">Powered by <a href="https://hashcam.io" target="_blank" style="color:#89f;">HashCam</a> · Open source verifier</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-sha256/build/sha256.min.js"></script>
+  <script>
+    // ---- Config (let op: update API_KEY indien nodig) ----
+    const API_KEY  = "ICZCXTVQUIYF6IUPFU44K12JRXEJ7T5E5I";
+    const CONTRACT = "0x076708f62d9d6fdbad7d1567161483bafda5a1da";
+    const SIG_IS   = "0xa86e47c9";   // isHashRegistered(bytes32)
+    const SIG_TS   = "0xf7170cf7";   // hashToTimestamp(bytes32)
+
+    // ---- DOM
+    const dz  = document.getElementById("dz");
+    const fi  = document.getElementById("fi");
+    const msg = document.getElementById("msg");
+    const sel = document.getElementById("sel");
+
+    // ---- Helpers
+    function ui(text, color) {
+      msg.style.color = color||"#fff";
+      msg.innerHTML = text;
+    }
+    async function shaHex(file) {
+      const buf = await file.arrayBuffer();
+      if (window.crypto && crypto.subtle) {
+        const hashBuffer = await crypto.subtle.digest("SHA-256", buf);
+        return [...new Uint8Array(hashBuffer)].map(b=>b.toString(16).padStart(2,"0")).join("");
+      }
+      return sha256(new Uint8Array(buf));
+    }
+    async function ethCall(selector, key32) {
+      const data = selector + key32.slice(2);
+      const url  =
+        "https://api-sepolia.etherscan.io/api" +
+        "?module=proxy" +
+        "&action=eth_call" +
+        `&to=${CONTRACT}` +
+        `&data=${data}` +
+        "&tag=latest" +
+        `&apikey=${API_KEY}`;
+      const resp = await fetch(url);
+      const json = await resp.json();
+      return json.result || "0x";
+    }
+
+    // ---- Main verify flow
+    async function verify(file) {
+      if(!file) return;
+      ui("⏳ Calculating SHA-256…","#ffe");
+      const hex = await shaHex(file);
+      const key32 = "0x" + hex;
+      // 1) Check hash
+      const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
+      if (!isRegistered) return ui("❌ NOT FOUND","crimson");
+      // 2) Get timestamp
+      const tsRes = await ethCall(SIG_TS, key32);
+      const tsNum = parseInt(tsRes,16);
+      const when  = new Date(tsNum*1000).toLocaleString();
+      return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
+    }
+
+    // ---- Drag, drop, select events
+    dz.ondragover = e=>{e.preventDefault();dz.style.borderColor="#0af";}
+    dz.ondragleave = ()=>{dz.style.borderColor="#444";}
+    dz.ondrop = e=>{
+      e.preventDefault(); dz.style.borderColor="#444";
+      if(e.dataTransfer.files && e.dataTransfer.files[0]) verify(e.dataTransfer.files[0]);
+    }
+    dz.onclick = ()=>fi.click();
+    sel.onclick = ()=>fi.click();
+    fi.onchange = e=>e.target.files[0]&&verify(e.target.files[0]);
+  </script>
+</body>
+</html>
