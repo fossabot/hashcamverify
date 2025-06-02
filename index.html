@@ -57,6 +57,10 @@
       }
       return sha256(new Uint8Array(buf));
     }
+    function sha3hex(hexstr) {
+      // returns keccak256 as 0x... string
+      return ethers.utils.keccak256(ethers.utils.toUtf8Bytes(hexstr));
+    }
     async function ethCall(selector, key32) {
       const data = selector + key32.slice(2);
       const url  =
@@ -72,12 +76,13 @@
       return json.result || "0x";
     }
 
-    // ---- Main verify flow
+    // ---- Main verify flow (let op: nieuwe mapping key!)
     async function verify(file) {
       if(!file) return;
       ui("⏳ Calculating SHA-256…","#ffe");
-      const hex = await shaHex(file);
-      const key32 = "0x" + hex;
+      const sha = await shaHex(file);
+      const hexstr = "0x" + sha;
+      const key32 = sha3hex(hexstr); // Mapping-key zoals in Solidity
       // 1) Check hash
       const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
       if (!isRegistered) return ui("❌ NOT FOUND","crimson");
