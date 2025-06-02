@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>HashCam Blockchain Verificatie</title>
+  <title>HashCam Media Blockchain Verificatie</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link href="https://fonts.googleapis.com/css?family=Fira+Mono:400,700&display=swap" rel="stylesheet">
   <style>
@@ -15,7 +15,6 @@
     .msg { margin:2em 0 0; font-size:1.1em; text-align:center; min-height:2.5em; word-break:break-all;}
     .credit {margin:2.5em 0 0; text-align:center; font-size:.95em; color:#bbb;}
     @media (max-width:600px) { .wrap{padding:1em;} .dz{padding:1.5em .5em;} }
-    a { color: #62e7ff; }
   </style>
 </head>
 <body>
@@ -26,17 +25,15 @@
       <input type="file" id="fi" style="display:none">
     </div>
     <div class="msg" id="msg"></div>
-    <div class="credit">Powered by <a href="https://hashcam.io" target="_blank">HashCam</a> · Open source verifier</div>
+    <div class="credit">Powered by <a href="https://hashcam.io" target="_blank" style="color:#89f;">HashCam</a> · Open source verifier</div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5/dist/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/js-sha256/build/sha256.min.js"></script>
   <script>
     // ---- Config ----
     const API_KEY  = "ICZCXTVQUIYF6IUPFU44K12JRXEJ7T5E5I";
     const CONTRACT = "0x076708f62d9d6fdbad7d1567161483bafda5a1da";
-    const SIG_IS   = "0xa86e47c9";   // isHashRegistered(bytes32)
-    const SIG_TS   = "0xf7170cf7";   // hashToTimestamp(bytes32)
+    const SIG_VERIFY = "0x86fb2813";   // verifyHash(string)
 
     // ---- DOM
     const dz  = document.getElementById("dz");
@@ -46,23 +43,34 @@
 
     // ---- Helpers
     function ui(text, color) {
-      msg.style.color = color || "#fff";
+      msg.style.color = color||"#fff";
       msg.innerHTML = text;
     }
     async function shaHex(file) {
       const buf = await file.arrayBuffer();
-      if (window.crypto && crypto.subtle) {
-        const hashBuffer = await crypto.subtle.digest("SHA-256", buf);
-        return [...new Uint8Array(hashBuffer)].map(b=>b.toString(16).padStart(2,"0")).join("");
-      }
       return sha256(new Uint8Array(buf));
     }
-    function sha3hex(str) {
-      return ethers.utils.keccak256(ethers.utils.toUtf8Bytes(str));
+
+    // Build calldata for verifyHash(string)
+    function encodeVerifyHashInput(hashStr) {
+      // 1. function selector (0x86fb2813)
+      // 2. string offset (always 0x20, because first argument after selector)
+      // 3. string length (32 bytes)
+      // 4. string (hex encoded, 32-byte padded right)
+      const selector = SIG_VERIFY.replace("0x", "");
+      const utf8 = new TextEncoder().encode(hashStr);
+      const len = utf8.length.toString(16).padStart(64, "0");
+      let data = "";
+      utf8.forEach(b => data += b.toString(16).padStart(2, "0"));
+      while (data.length % 64 !== 0) data += "00";
+      return "0x" + selector +
+        "0000000000000000000000000000000000000000000000000000000000000020" + // offset
+        len + data;
     }
-    async function ethCall(selector, key32) {
-      const data = selector + key32.slice(2);
-      const url  =
+
+    async function ethCallVerify(hashStr) {
+      const data = encodeVerifyHashInput(hashStr);
+      const url =
         "https://api-sepolia.etherscan.io/api" +
         "?module=proxy" +
         "&action=eth_call" +
@@ -75,26 +83,25 @@
       return json.result || "0x";
     }
 
-    // ---- Main verify flow ----
+    // ---- Main verify flow
     async function verify(file) {
       if(!file) return;
       ui("⏳ Calculating SHA-256…","#ffe");
-      const sha = await shaHex(file);
-      const key32 = sha3hex(sha); // <--- ZONDER "0x" prefix!
-      console.log("[HashCam] SHA256:", sha);
-      console.log("[HashCam] Mapping key:", key32);
-
-      const isRegistered = parseInt(await ethCall(SIG_IS, key32),16) === 1;
-      if (isRegistered) {
-        const tsRes = await ethCall(SIG_TS, key32);
-        const tsNum = parseInt(tsRes,16);
-        const when  = new Date(tsNum*1000).toLocaleString();
-        return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
-      }
-      ui("❌ NOT FOUND","crimson");
+      const hex = await shaHex(file); // zonder 0x
+      // Direct string als argument!
+      ui("⏳ Querying contract…","#ffe");
+      const result = await ethCallVerify(hex);
+      // Solidity return: tuple(uint256,bool,address)
+      // Decode: 32 bytes timestamp, 32 bytes bool, 32 bytes address
+      const ts = parseInt(result.slice(2, 66), 16);
+      const found = parseInt(result.slice(66, 130), 16) === 1;
+      // const addr = "0x"+result.slice(130+24,130+64);
+      if (!found) return ui("❌ NOT FOUND","crimson");
+      const when  = new Date(ts*1000).toLocaleString();
+      return ui(`✅ Registered on <b>${when}</b>`, "#7f7");
     }
 
-    // ---- Drag, drop, select events ----
+    // ---- Drag, drop, select events
     dz.ondragover = e=>{e.preventDefault();dz.style.borderColor="#0af";}
     dz.ondragleave = ()=>{dz.style.borderColor="#444";}
     dz.ondrop = e=>{
